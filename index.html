@@ -188,68 +188,30 @@
 			const iconFsEnter = document.getElementById('icon-fs-enter')
 			const iconFsExit = document.getElementById('icon-fs-exit')
 
-			const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-
-			// Seuils plus tolérants sur mobile : le décodage est plus lent
-			// et re-seeker trop souvent crée des micro-freezes en boucle.
-			const HARD_SYNC_THRESHOLD = isMobile ? 1.5 : 0.5
-			const SOFT_SYNC_THRESHOLD = isMobile ? 0.3 : 0.1
-			const SYNC_INTERVAL_MS = isMobile ? 10000 : 3000
-			// Délai de grâce après un hard-seek pour laisser la vidéo
-			// finir de bufferiser avant de remesurer.
-			const POST_SEEK_COOLDOWN_MS = 2000
-
-			let latencyOffset = 0
-			let lastHardSeekAt = 0
-
-			async function fetchServerElapsed() {
-				const t0 = performance.now()
-				const res = await fetch('/sync', { cache: 'no-store' })
-				const t1 = performance.now()
-				const data = await res.json()
-				latencyOffset = (t1 - t0) / 2 / 1000
-				return data.elapsed + latencyOffset
-			}
-
-			function targetTime(elapsed) {
-				const duration = video.duration
-				if (!duration || !isFinite(duration)) return null
-				return elapsed % duration
-			}
-
-			async function sync() {
-				// Ne rien faire pendant un seek / buffer / pause : mesurer
-				// maintenant produirait une fausse dérive et on boucle.
-				if (video.seeking || video.readyState < 3 || video.paused) return
-				if (Date.now() - lastHardSeekAt < POST_SEEK_COOLDOWN_MS) return
-
+			// Sync unique au chargement : on place la vidéo au bon endroit,
+			// puis on la laisse tourner toute seule. Pas de resync périodique
+			// (ça créait des micro-freezes audibles).
+			async function syncOnce() {
 				try {
-					const elapsed = await fetchServerElapsed()
-					const target = targetTime(elapsed)
-					if (target === null) return
+					const t0 = performance.now()
+					const res = await fetch('/sync', { cache: 'no-store' })
+					const t1 = performance.now()
+					const { elapsed } = await res.json()
 
-					const drift = video.currentTime - target
+					const duration = video.duration
+					if (!duration || !isFinite(duration)) return
 
-					if (Math.abs(drift) > HARD_SYNC_THRESHOLD) {
-						video.currentTime = target
-						video.playbackRate = 1
-						lastHardSeekAt = Date.now()
-					} else if (Math.abs(drift) > SOFT_SYNC_THRESHOLD) {
-						video.playbackRate = drift > 0 ? 0.97 : 1.03
-					} else {
-						video.playbackRate = 1
-					}
+					const latencyOffset = (t1 - t0) / 2 / 1000
+					video.currentTime = (elapsed + latencyOffset) % duration
 				} catch (err) {
 					console.error('Sync error', err)
 				}
 			}
 
 			video.addEventListener('loadedmetadata', async () => {
-				await sync()
+				await syncOnce()
 				video.play().catch(() => {})
 			})
-
-			setInterval(sync, SYNC_INTERVAL_MS)
 
 			function refreshAudioUI() {
 				const muted = video.muted || video.volume === 0
