@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
 // Route qui gère le streaming vidéo (avec support du scroll/range)
 app.get('/video', (req, res) => {
 	console.log('Demande de vidéo reçue !')
-	const videoPath = path.join(__dirname, 'ma-video.mp4')
+	const videoPath = path.join(__dirname, 'babymonster-video.mp4')
 
 	if (!fs.existsSync(videoPath)) {
 		console.error("ERREUR : Le fichier n'existe pas ici :", videoPath)
