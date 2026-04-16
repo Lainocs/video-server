@@ -4,32 +4,248 @@
 		<meta charset="UTF-8" />
 		<title>Stream VPS</title>
 		<style>
+			html,
 			body {
 				background: #000;
-				display: flex;
-				justify-content: center;
-				align-items: center;
-				height: 100vh;
 				margin: 0;
+				padding: 0;
+				height: 100%;
+				width: 100%;
+				overflow: hidden;
+			}
+			body.idle {
+				cursor: none;
 			}
 			video {
-				max-width: 90%;
-				border: 2px solid #333;
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				object-fit: cover;
+				background: #000;
+			}
+
+			#audio-ui {
+				position: fixed;
+				bottom: 24px;
+				right: 24px;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				padding: 10px 16px;
+				background: rgba(0, 0, 0, 0.55);
+				backdrop-filter: blur(8px);
+				-webkit-backdrop-filter: blur(8px);
+				border-radius: 999px;
+				opacity: 0;
+				transition: opacity 0.3s ease;
+				pointer-events: none;
+				z-index: 20;
+				color: #fff;
+				font-family: sans-serif;
+			}
+			body.idle #audio-ui {
+				opacity: 0;
+				pointer-events: none;
+			}
+			body:not(.idle) #audio-ui {
+				opacity: 1;
+				pointer-events: auto;
+			}
+
+			#mute-btn {
+				background: none;
+				border: none;
+				color: #fff;
+				cursor: pointer;
+				padding: 4px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+			#mute-btn svg {
+				width: 22px;
+				height: 22px;
+			}
+
+			#volume {
+				-webkit-appearance: none;
+				appearance: none;
+				width: 120px;
+				height: 4px;
+				background: rgba(255, 255, 255, 0.3);
+				border-radius: 2px;
+				outline: none;
+				cursor: pointer;
+			}
+			#volume::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				appearance: none;
+				width: 14px;
+				height: 14px;
+				background: #fff;
+				border-radius: 50%;
+				cursor: pointer;
+			}
+			#volume::-moz-range-thumb {
+				width: 14px;
+				height: 14px;
+				background: #fff;
+				border-radius: 50%;
+				cursor: pointer;
+				border: none;
 			}
 		</style>
 	</head>
 	<body>
 		<video
-			controls
+			id="player"
 			autoplay
 			loop
 			muted
+			playsinline
+			disablepictureinpicture
+			disableremoteplayback
 		>
 			<source
 				src="/video/"
 				type="video/mp4"
 			/>
-			Votre navigateur ne supporte pas la lecture de vidéos.
 		</video>
+
+		<div id="audio-ui">
+			<button
+				id="mute-btn"
+				aria-label="Activer/couper le son"
+			>
+				<svg
+					id="icon-muted"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+				>
+					<path
+						d="M3 9v6h4l5 5V4L7 9H3zm13.59 3L14 9.41 15.41 8 18 10.59 20.59 8 22 9.41 19.41 12 22 14.59 20.59 16 18 13.41 15.41 16 14 14.59 16.59 12z"
+					/>
+				</svg>
+				<svg
+					id="icon-sound"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					style="display: none"
+				>
+					<path
+						d="M3 9v6h4l5 5V4L7 9H3zm11.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 14.5 12zM12 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54z"
+					/>
+				</svg>
+			</button>
+			<input
+				id="volume"
+				type="range"
+				min="0"
+				max="1"
+				step="0.01"
+				value="1"
+			/>
+		</div>
+
+		<script>
+			const video = document.getElementById('player')
+			const muteBtn = document.getElementById('mute-btn')
+			const iconMuted = document.getElementById('icon-muted')
+			const iconSound = document.getElementById('icon-sound')
+			const volumeSlider = document.getElementById('volume')
+
+			const HARD_SYNC_THRESHOLD = 0.5
+			const SOFT_SYNC_THRESHOLD = 0.1
+
+			let latencyOffset = 0
+
+			async function fetchServerElapsed() {
+				const t0 = performance.now()
+				const res = await fetch('/sync', { cache: 'no-store' })
+				const t1 = performance.now()
+				const data = await res.json()
+				latencyOffset = (t1 - t0) / 2 / 1000
+				return data.elapsed + latencyOffset
+			}
+
+			function targetTime(elapsed) {
+				const duration = video.duration
+				if (!duration || !isFinite(duration)) return null
+				return elapsed % duration
+			}
+
+			async function sync() {
+				try {
+					const elapsed = await fetchServerElapsed()
+					const target = targetTime(elapsed)
+					if (target === null) return
+
+					const drift = video.currentTime - target
+
+					if (Math.abs(drift) > HARD_SYNC_THRESHOLD) {
+						video.currentTime = target
+						video.playbackRate = 1
+					} else if (Math.abs(drift) > SOFT_SYNC_THRESHOLD) {
+						video.playbackRate = drift > 0 ? 0.95 : 1.05
+					} else {
+						video.playbackRate = 1
+					}
+				} catch (err) {
+					console.error('Sync error', err)
+				}
+			}
+
+			video.addEventListener('loadedmetadata', async () => {
+				await sync()
+				video.play().catch(() => {})
+			})
+
+			setInterval(sync, 3000)
+
+			function refreshAudioUI() {
+				const muted = video.muted || video.volume === 0
+				iconMuted.style.display = muted ? '' : 'none'
+				iconSound.style.display = muted ? 'none' : ''
+			}
+
+			muteBtn.addEventListener('click', () => {
+				if (video.muted) {
+					video.muted = false
+					if (video.volume === 0) {
+						video.volume = 1
+						volumeSlider.value = '1'
+					}
+				} else {
+					video.muted = true
+				}
+				refreshAudioUI()
+			})
+
+			volumeSlider.addEventListener('input', () => {
+				const v = parseFloat(volumeSlider.value)
+				video.volume = v
+				video.muted = v === 0
+				refreshAudioUI()
+			})
+
+			video.addEventListener('volumechange', refreshAudioUI)
+			refreshAudioUI()
+
+			// Auto-hide du curseur et de l'UI audio après inactivité.
+			let idleTimer
+			function wake() {
+				document.body.classList.remove('idle')
+				clearTimeout(idleTimer)
+				idleTimer = setTimeout(() => {
+					document.body.classList.add('idle')
+				}, 2500)
+			}
+			document.addEventListener('mousemove', wake)
+			document.addEventListener('touchstart', wake)
+			document.addEventListener('keydown', wake)
+			wake()
+		</script>
 	</body>
 </html>

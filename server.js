@@ -6,9 +6,22 @@ const app = express()
 const PORT = 3010
 const VIDEO_PATH = path.join(__dirname, 'videos', 'babymonster-video.mp4') // Vérifie bien le nom de ton fichier
 
-// Route pour servir la page d'accueil
+// Timestamp de référence partagé par tous les clients.
+// Tout le monde calcule sa position dans la vidéo à partir de ce point fixe.
+const SERVER_START = Date.now()
+
 app.get('/', (req, res) => {
 	res.sendFile(path.join(__dirname, 'index.html'))
+})
+
+// Endpoint de synchronisation : renvoie combien de temps s'est écoulé
+// depuis le démarrage du serveur. Le client fait `elapsed % duration`
+// pour savoir où se positionner dans la boucle.
+app.get('/sync', (req, res) => {
+	res.json({
+		elapsed: (Date.now() - SERVER_START) / 1000,
+		serverTime: Date.now(),
+	})
 })
 
 // Route qui gère le streaming vidéo (avec support du scroll/range)
