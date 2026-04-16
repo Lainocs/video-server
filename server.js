@@ -4,7 +4,7 @@ const path = require('path')
 const app = express()
 
 const PORT = 3010
-const VIDEO_PATH = path.join(__dirname, 'babymonster-video.mp4') // Vérifie bien le nom de ton fichier
+const VIDEO_PATH = path.join(__dirname, 'videos', 'babymonster-video.mp4') // Vérifie bien le nom de ton fichier
 
 // Route pour servir la page d'accueil
 app.get('/', (req, res) => {
@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
 // Route qui gère le streaming vidéo (avec support du scroll/range)
 app.get('/video', (req, res) => {
 	console.log('Demande de vidéo reçue !')
-	const videoPath = path.join(__dirname, 'babymonster-video.mp4')
+	const videoPath = path.join(__dirname, 'videos', 'babymonster-video.mp4')
 
 	if (!fs.existsSync(videoPath)) {
 		console.error("ERREUR : Le fichier n'existe pas ici :", videoPath)
