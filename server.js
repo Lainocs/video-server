@@ -14,6 +14,10 @@ app.get('/', (req, res) => {
 	res.sendFile(path.join(__dirname, 'index.html'))
 })
 
+app.get('/favicon.png', (req, res) => {
+	res.sendFile(path.join(__dirname, 'favicon.png'))
+})
+
 // Endpoint de synchronisation : renvoie combien de temps s'est écoulé
 // depuis le démarrage du serveur. Le client fait `elapsed % duration`
 // pour savoir où se positionner dans la boucle.
