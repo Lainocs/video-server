@@ -4,7 +4,7 @@ const path = require('path')
 const app = express()
 
 const PORT = 3010
-const VIDEO_PATH = path.join(__dirname, 'babymonster-concert.mp4') // Vérifie bien le nom de ton fichier
+const VIDEO_PATH = path.join(__dirname, 'babymonster-video.mp4') // Vérifie bien le nom de ton fichier
 
 // Route pour servir la page d'accueil
 app.get('/', (req, res) => {
