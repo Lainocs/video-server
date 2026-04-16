@@ -188,10 +188,19 @@
 			const iconFsEnter = document.getElementById('icon-fs-enter')
 			const iconFsExit = document.getElementById('icon-fs-exit')
 
-			const HARD_SYNC_THRESHOLD = 0.5
-			const SOFT_SYNC_THRESHOLD = 0.1
+			const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+
+			// Seuils plus tolérants sur mobile : le décodage est plus lent
+			// et re-seeker trop souvent crée des micro-freezes en boucle.
+			const HARD_SYNC_THRESHOLD = isMobile ? 1.5 : 0.5
+			const SOFT_SYNC_THRESHOLD = isMobile ? 0.3 : 0.1
+			const SYNC_INTERVAL_MS = isMobile ? 10000 : 3000
+			// Délai de grâce après un hard-seek pour laisser la vidéo
+			// finir de bufferiser avant de remesurer.
+			const POST_SEEK_COOLDOWN_MS = 2000
 
 			let latencyOffset = 0
+			let lastHardSeekAt = 0
 
 			async function fetchServerElapsed() {
 				const t0 = performance.now()
@@ -209,6 +218,11 @@
 			}
 
 			async function sync() {
+				// Ne rien faire pendant un seek / buffer / pause : mesurer
+				// maintenant produirait une fausse dérive et on boucle.
+				if (video.seeking || video.readyState < 3 || video.paused) return
+				if (Date.now() - lastHardSeekAt < POST_SEEK_COOLDOWN_MS) return
+
 				try {
 					const elapsed = await fetchServerElapsed()
 					const target = targetTime(elapsed)
@@ -219,8 +233,9 @@
 					if (Math.abs(drift) > HARD_SYNC_THRESHOLD) {
 						video.currentTime = target
 						video.playbackRate = 1
+						lastHardSeekAt = Date.now()
 					} else if (Math.abs(drift) > SOFT_SYNC_THRESHOLD) {
-						video.playbackRate = drift > 0 ? 0.95 : 1.05
+						video.playbackRate = drift > 0 ? 0.97 : 1.03
 					} else {
 						video.playbackRate = 1
 					}
@@ -234,7 +249,7 @@
 				video.play().catch(() => {})
 			})
 
-			setInterval(sync, 3000)
+			setInterval(sync, SYNC_INTERVAL_MS)
 
 			function refreshAudioUI() {
 				const muted = video.muted || video.volume === 0
@@ -274,8 +289,18 @@
 			fsBtn.addEventListener('click', () => {
 				if (document.fullscreenElement) {
 					document.exitFullscreen().catch(() => {})
-				} else {
-					document.documentElement.requestFullscreen().catch(() => {})
+					return
+				}
+
+				// API standard (Chrome, Firefox, Android…)
+				if (document.documentElement.requestFullscreen) {
+					document.documentElement.requestFullscreen().catch(() => {
+						// Fallback iOS Safari : seul le <video> peut passer fullscreen,
+						// via le lecteur natif QuickTime.
+						if (video.webkitEnterFullscreen) video.webkitEnterFullscreen()
+					})
+				} else if (video.webkitEnterFullscreen) {
+					video.webkitEnterFullscreen()
 				}
 			})
 
